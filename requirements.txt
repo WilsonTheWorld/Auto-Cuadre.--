@@ -1,0 +1,1 @@
+# No se requieren paquetes externos. Microsoft Excel debe estar instalado.
