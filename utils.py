@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -21,16 +21,17 @@ MONTHS = (
     "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
 )
 WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
-OLE_HEADER = bytes.fromhex("D0CF11E0A1B11AE1")
-
-DEFAULT_CONFIG: dict[str, Any] = {
-    "template_path": "",
-    "base_dir": "",
-    "update_manifest_url": "",   # URL https:// o ruta a version.json (carpeta compartida)
-    "workdays": [0, 1, 2, 3, 4, 5],  # 0 = lunes … 6 = domingo; por defecto no se labora el domingo
-    "holidays": [],              # fechas "AAAA-MM-DD" sin labor
-    "alert_today": True,         # avisar también si falta el cuadre de hoy
+DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4, 5]  # lunes=0 ... domingo=6 (por defecto no se labora el domingo)
+# Formato con el que se escribe la fecha dentro del cuadre (celda A5). Clave = código de formato de Excel.
+DATE_FORMATS = {
+    "dd/mm/yyyy": "Día/Mes/Año  (31/12/2026)",
+    "dd-mm-yyyy": "Día-Mes-Año  (31-12-2026)",
+    "mm/dd/yyyy": "Mes/Día/Año  (12/31/2026)",
+    "yyyy-mm-dd": "Año-Mes-Día  (2026-12-31)",
 }
+DEFAULT_DATE_FORMAT = "dd/mm/yyyy"
+EXCEL_EPOCH = date(1899, 12, 30)  # día 0 de los números de fecha de Excel
+OLE_HEADER = bytes.fromhex("D0CF11E0A1B11AE1")
 
 
 class ConfigurationError(RuntimeError):
@@ -41,32 +42,58 @@ class ValidationError(ValueError):
     """Un dato introducido no satisface las reglas de negocio."""
 
 
+def _clean_days(raw: Any) -> list[int]:
+    if not isinstance(raw, list):
+        return list(DEFAULT_WORKING_DAYS)
+    return sorted({day for day in raw if isinstance(day, int) and not isinstance(day, bool) and 0 <= day <= 6})
+
+
+def _clean_date_format(raw: Any) -> str:
+    return raw if isinstance(raw, str) and raw in DATE_FORMATS else DEFAULT_DATE_FORMAT
+
+
+def _clean_holidays(raw: Any) -> list[str]:
+    result = set()
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            result.add(date.fromisoformat(str(item)).isoformat())
+        except ValueError:
+            continue
+    return sorted(result)
+
+
 def load_config() -> dict[str, Any]:
     try:
-        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ConfigurationError(f"No se pudo leer {CONFIG_PATH.name}: {error}") from error
-    if not isinstance(raw, dict):
+    if not isinstance(config, dict):
         raise ConfigurationError("config.json debe contener un objeto JSON.")
-    config: dict[str, Any] = {**DEFAULT_CONFIG, **raw}
-    for key in ("template_path", "base_dir", "update_manifest_url"):
-        config[key] = str(config.get(key) or "").strip()
-    days = config.get("workdays")
-    try:
-        config["workdays"] = sorted({int(d) for d in days if 0 <= int(d) <= 6}) if isinstance(days, list) else list(DEFAULT_CONFIG["workdays"])
-    except (TypeError, ValueError):
-        config["workdays"] = list(DEFAULT_CONFIG["workdays"])
-    holidays = config.get("holidays")
-    config["holidays"] = sorted({str(h).strip() for h in holidays if str(h).strip()}) if isinstance(holidays, list) else []
-    config["alert_today"] = bool(config.get("alert_today", True))
-    return config
+    return {
+        "template_path": str(config.get("template_path", "")).strip(),
+        "base_dir": str(config.get("base_dir", "")).strip(),
+        # reglas de cada empresa (editables en Configuración)
+        "working_days": _clean_days(config.get("working_days")),
+        "holidays": _clean_holidays(config.get("holidays")),
+        "count_today_as_pending": bool(config.get("count_today_as_pending", True)),
+        "update_manifest_url": str(config.get("update_manifest_url", "")).strip(),
+        "date_format": _clean_date_format(config.get("date_format")),
+    }
 
 
 def save_config(config: dict[str, Any]) -> None:
-    """Guarda la configuración de forma atómica (sin dejar el archivo a medias)."""
-    merged = {**DEFAULT_CONFIG, **config}
+    """Guarda config.json de forma atómica (no queda a medias si algo falla)."""
+    data = {
+        "template_path": str(config.get("template_path", "")).strip(),
+        "base_dir": str(config.get("base_dir", "")).strip(),
+        "working_days": _clean_days(config.get("working_days")),
+        "holidays": _clean_holidays(config.get("holidays")),
+        "count_today_as_pending": bool(config.get("count_today_as_pending", True)),
+        "update_manifest_url": str(config.get("update_manifest_url", "")).strip(),
+        "date_format": _clean_date_format(config.get("date_format")),
+    }
     temporary = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
-    temporary.write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, CONFIG_PATH)
 
 
@@ -84,7 +111,7 @@ def _find_existing_directory(parent: Path, expected_name: str, *, prefix: bool =
     return None
 
 
-def ensure_configuration(config: dict[str, Any]) -> tuple[Path, Path]:
+def ensure_configuration(config: dict[str, str]) -> tuple[Path, Path]:
     template = Path(config["template_path"]).expanduser()
     base_dir = Path(config["base_dir"]).expanduser()
     if not template.is_file() or template.suffix.lower() != ".xls":
@@ -94,7 +121,7 @@ def ensure_configuration(config: dict[str, Any]) -> tuple[Path, Path]:
     return template, base_dir
 
 
-def get_current_period_paths(config: dict[str, Any], today: date | None = None) -> dict[str, Path]:
+def get_current_period_paths(config: dict[str, str], today: date | None = None) -> dict[str, Path]:
     """Ubica exclusivamente las carpetas existentes del centro; nunca crea carpetas."""
     _, base_dir = ensure_configuration(config)
     today = today or date.today()
@@ -113,12 +140,13 @@ def get_current_period_paths(config: dict[str, Any], today: date | None = None) 
 def is_valid_legacy_workbook(filepath: Path | str) -> bool:
     filepath = Path(filepath)
     try:
-        return filepath.is_file() and filepath.read_bytes()[:8] == OLE_HEADER
+        with filepath.open("rb") as handle:  # solo la cabecera; antes se leía el archivo completo
+            return handle.read(8) == OLE_HEADER
     except OSError:
         return False
 
 
-def ensure_daily_workbook(config: dict[str, Any], today: date | None = None) -> Path:
+def ensure_daily_workbook(config: dict[str, str], today: date | None = None) -> Path:
     """Crea solo el archivo del día dentro de la carpeta del mes ya existente."""
     template, _ = ensure_configuration(config)
     paths = get_current_period_paths(config, today)
@@ -133,7 +161,14 @@ def ensure_daily_workbook(config: dict[str, Any], today: date | None = None) -> 
     temporary = filepath.with_name(f".{filepath.stem}.{uuid.uuid4().hex}.tmp.xls")
     try:
         shutil.copy2(template, temporary)
-        _run_excel_automation("initialize", temporary, {"date": (today or date.today()).strftime("%d/%m/%Y")})
+        day = today or date.today()
+        # Antes se enviaba el texto "10/10/2026" y Excel lo interpretaba con el idioma de Windows
+        # (en inglés quedaba mes/día/año). Ahora se envía la fecha real (número de Excel) y el
+        # formato elegido en Configuración, así sale igual en cualquier PC.
+        _run_excel_automation("initialize", temporary, {
+            "serial": (day - EXCEL_EPOCH).days,
+            "dateFormat": _clean_date_format(config.get("date_format")),
+        })
         if not is_valid_legacy_workbook(temporary):
             raise ConfigurationError("Excel no generó un archivo .xls válido.")
         os.replace(temporary, filepath)
@@ -143,7 +178,7 @@ def ensure_daily_workbook(config: dict[str, Any], today: date | None = None) -> 
     return filepath
 
 
-def read_daily_values(config: dict[str, Any]) -> dict[str, Any] | None:
+def read_daily_values(config: dict[str, str]) -> dict[str, Any] | None:
     """Lee valores existentes sin crear un archivo diario nuevo."""
     filepath = get_current_period_paths(config)["target_filepath"]
     if not filepath.exists():
@@ -153,7 +188,36 @@ def read_daily_values(config: dict[str, Any]) -> dict[str, Any] | None:
     return _run_excel_automation("read", filepath, {})
 
 
-def save_daily_values(config: dict[str, Any], *, monthly: float, other: float,
+def get_statistics(config: dict[str, str], period: str, today: date | None = None) -> list[dict[str, Any]]:
+    """Obtiene comparaciones de archivos existentes para una semana, mes o año."""
+    today = today or date.today()
+    if period == "week":
+        start = today - timedelta(days=today.weekday())
+    elif period == "month":
+        start = today.replace(day=1)
+    elif period == "year":
+        start = today.replace(month=1, day=1)
+    else:
+        raise ValidationError("El período de estadísticas no es válido.")
+
+    records: list[dict[str, str]] = []
+    cursor = start
+    while cursor <= today:
+        try:
+            filepath = get_current_period_paths(config, cursor)["target_filepath"]
+        except ConfigurationError:
+            cursor += timedelta(days=1)
+            continue
+        if filepath.exists() and is_valid_legacy_workbook(filepath):
+            records.append({"date": cursor.isoformat(), "path": str(filepath)})
+        cursor += timedelta(days=1)
+    if not records:
+        return []
+    result = _run_excel_automation("statistics", None, {"records": records})
+    return list(result.get("records", []))
+
+
+def save_daily_values(config: dict[str, str], *, monthly: float, other: float,
                       transfers: float, cash: float,
                       new_receipts: list[tuple[str, str, float]],
                       updated_receipts: list[tuple[int, str, str, float]]) -> tuple[Path, dict[str, Any]]:

@@ -80,7 +80,13 @@ try {
         $result = [ordered]@{ records = @($history) }
     }
     elseif ($Action -eq 'initialize') {
-        $sheet.Range('A5').Value2 = [string]$payload.date
+        $format = 'dd/mm/yyyy'
+        if (-not [string]::IsNullOrWhiteSpace([string]$payload.dateFormat)) { $format = [string]$payload.dateFormat }
+        $dateCell = $sheet.Range('A5')
+        # Primero el formato y después la fecha (número de Excel): no depende del idioma de Windows.
+        $dateCell.NumberFormat = $format
+        $dateCell.Value2 = [double]$payload.serial
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($dateCell)
         $excel.CalculateFull()
         $book.Save()
     }
