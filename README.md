@@ -2,28 +2,46 @@
 
 Aplicación local para crear y capturar el cuadre diario en el formato `.xls` institucional.
 
-## Primer uso
+## Instalación
 
-1. Abra `Cuadre Digital.bat` desde el proyecto o el acceso **Cuadre Digital** del Escritorio.
-2. En el panel oscuro de **Auto Cuadre**, seleccione **Cuadre del día** para registrar los movimientos.
-3. Pulse **Añadir recibo** por cada recibo de salida y luego pulse **Guardar cuadre del día**.
+1. Instale Python 3 y Microsoft Excel.
+2. Instale el lector rápido de `.xls` (recomendado, hace las estadísticas casi instantáneas):
+   `python -m pip install -r requirements.txt`
+3. Copie `config.example.json` como `config.json` (o configure todo desde **Configuración**).
 
-El botón **Imprimir cuadre actual** permite guardar lo que está en pantalla y abrir el archivo en Excel; allí puede elegir impresora, copias y orientación desde **Archivo > Imprimir**. También permite enviar el último archivo guardado a la impresora predeterminada.
+## Uso
 
-La interfaz muestra automáticamente el **Balance del día** (`E45`) y la **Diferencia** (`E49`). El panel derecho informa si el cuadre está cuadrado, tiene sobrante o faltante, y conserva avisos de registros y modificaciones de recibos durante la sesión.
+Abra `Cuadre Digital.bat`. Se muestra una pantalla de carga que, en segundo plano:
 
-El inicio incluye tres tarjetas: **Cuadre del día**, **Estadísticas** (con períodos semanal, mensual y anual) y **Lanzar cuadre actual**. Los controles de configuración e impresión están en la barra inferior.
+1. Busca e instala actualizaciones (si hay un origen configurado) y se reinicia sola.
+2. Revisa el mes en curso y avisa de los **días laborables sin cuadre**.
+3. Abre la ventana principal.
 
-El programa no crea carpetas. Usa la carpeta ya existente `CUADRE [Año] / [MES]` y guarda allí el archivo como `CUADRE CAJA DD-MM-AAAA.xls`.
+Toda la navegación ocurre en **una sola ventana**: **Inicio**, **Cuadre del día**, **Estadísticas** y **Configuración**.
 
-`Cuadre del dia.bat` crea (si aún no existe) y abre el archivo del día en la aplicación de Excel predeterminada.
+### Cuadre del día
+Registre mensualidades, ingresos varios, transferencias y efectivo; añada los recibos de salida y pulse **Guardar cuadre del día**. El panel se adapta a pantallas pequeñas (con desplazamiento) y el guardado se hace en segundo plano. Se muestran el **Balance** (`E45`) y la **Diferencia** (`E49`) y si el cuadre está cuadrado, con sobrante o faltante.
 
-## Ubicación configurada
+### Estadísticas
+Períodos **Semanal / Mensual / Anual** o un **período personalizado de mes a mes (máximo 12 meses)**. Muestra una barra de progreso global, la tabla por mes (se llena a medida que cada mes termina) y el gráfico. Los resultados se guardan en caché (`stats_cache.json`), así que los meses cerrados no se vuelven a leer.
 
-La aplicación usa directamente el modelo `C:\Users\User\Desktop\CUADRES CAJA\CUADRE 2026\CUADRE CAJA MODELO.xls` y guarda todos los cuadres en `C:\Users\User\Desktop\CUADRES CAJA`. La interfaz no muestra campos para editar rutas.
+### Configuración
+Rutas del modelo y de la carpeta principal, origen de actualizaciones, **días laborables**, feriados y si se avisa del cuadre de hoy. Por defecto no se labora el domingo.
+
+El programa no crea carpetas: usa las existentes `CUADRE [Año] / [MES]` y guarda `CUADRE CAJA DD-MM-AAAA.xls`.
+
+`Cuadre del dia.bat` crea (si no existe) y abre el archivo del día directamente en Excel.
+
+## Actualizaciones automáticas
+
+1. Cambie lo que necesite y ejecute: `python make_release.py 1.1.0 "Notas de la versión"`.
+2. Publique `release/auto_cuadre_1.1.0.zip` y `release/version.json` en la misma carpeta compartida o sitio **HTTPS**.
+3. En **Configuración > Origen de actualizaciones** ponga la ruta o URL de `version.json`.
+
+Cada PC verifica el SHA-256 del paquete, respalda lo que reemplaza (`.update_backup`) y revierte si algo falla. Nunca se tocan `config.json` ni la caché. El repositorio privado de GitHub no sirve como origen sin incrustar credenciales en cada PC.
 
 ## Requisitos de la plantilla
 
-La plantilla debe contener estas celdas de entrada: `A5` (fecha), `E11` (mensualidades), `E14` (varios), `B24:D39` (recibos), `D41` (transferencias) y `E47` (efectivo). El programa solo lee `E45` (balance) y `E49` (diferencia), que son cálculos automáticos de Excel. Las fórmulas y el formato `.xls` permanecen intactos; el programa usa Microsoft Excel para registrar los datos.
+La plantilla debe contener estas celdas de entrada: `A5` (fecha), `E11` (mensualidades), `E14` (varios), `B24:D39` (recibos), `D41` (transferencias) y `E47` (efectivo). El programa solo lee `E45` (balance) y `E49` (diferencia), que son cálculos automáticos de Excel. Las fórmulas y el formato `.xls` permanecen intactos.
 
-Los recibos se insertan exclusivamente entre las filas 24 y 39, para proteger los cálculos que comienzan más abajo. La aplicación avisa antes de guardar si no hay espacio suficiente.
+Los recibos se insertan exclusivamente entre las filas 24 y 39. La aplicación avisa antes de guardar si no hay espacio suficiente.

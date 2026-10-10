@@ -1,1 +1,3 @@
-# No se requieren paquetes externos. Microsoft Excel debe estar instalado.
+# Microsoft Excel debe estar instalado (guardado de cuadres y modo de respaldo de estadísticas).
+# xlrd lee los .xls directamente y hace las estadísticas casi instantáneas. Opcional pero muy recomendado.
+xlrd>=2.0.1

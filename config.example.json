@@ -1,0 +1,8 @@
+{
+  "template_path": "C:\\RUTA\\A\\CUADRES CAJA\\CUADRE 2026\\AGOSTO\\CUADRE CAJA MODELO.xls",
+  "base_dir": "C:\\RUTA\\A\\CUADRES CAJA",
+  "update_manifest_url": "",
+  "workdays": [0, 1, 2, 3, 4, 5],
+  "holidays": [],
+  "alert_today": true
+}
