@@ -20,7 +20,7 @@ El programa no crea carpetas. Usa la carpeta ya existente `CUADRE [Año] / [MES]
 
 ## Ubicación configurada
 
-La aplicación usa directamente el modelo `C:\Users\User\Desktop\CUADRES CAJA\CUADRE 2026\AGOSTO\CUADRE CAJA MODELO.xls` y guarda todos los cuadres en `C:\Users\User\Desktop\CUADRES CAJA`. La interfaz no muestra campos para editar rutas.
+La aplicación usa directamente el modelo `C:\Users\User\Desktop\CUADRES CAJA\CUADRE 2026\CUADRE CAJA MODELO.xls` y guarda todos los cuadres en `C:\Users\User\Desktop\CUADRES CAJA`. La interfaz no muestra campos para editar rutas.
 
 ## Requisitos de la plantilla
 
